@@ -1,4 +1,4 @@
-# Planet Voxel
+# Planet Voxel (Original readme not updated to webgpu.js)
 
 A browser-based voxel planet mining and factory automation game, in the vein
 of Astroneer + Satisfactory. You spawn on a small fully-destructible planet
