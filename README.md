@@ -44,7 +44,9 @@ Create a world from the menu and play.
 - **Right-click** place a building (with a build type selected), or connect a belt
   between two buildings (with nothing selected).
 - **B** build menu, **I** inventory, **M** market, **T** tech tree, **F** factory.
-- Looking at a building: **E** feed, **V** view/empty, **G** move, **X** demolish.
+- Looking at a building: **E** feed, **V** view/empty, **G** move, **C** cut belts
+  (removes belts touching it without demolishing), **X** demolish.
+- **R** rotate while placing/moving a building.
 - **P** pause.
 
 ## Troubleshooting
