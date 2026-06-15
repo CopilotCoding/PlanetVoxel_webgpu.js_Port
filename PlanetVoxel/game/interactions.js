@@ -152,9 +152,15 @@ export class BuildingInteractions {
       if (!this.beltFrom && factory.buildings.length > 0) {
         const lookedAt = factory.getBuildingAt();
         if (lookedAt) {
-          ui.setPlacementHint(`${lookedAt.def.name}  [E] Feed inventory  [V] View/Empty  [G] Move  [Right-click] Connect belt  [X] Demolish (+$${Math.floor(lookedAt.def.placeCost * 0.5)} refund)`);
+          ui.setPlacementHint(`${lookedAt.def.name}  [E] Feed  [V] View/Empty  [G] Move  [Right-click] Connect belt  [C] Cut belts  [X] Demolish (+$${Math.floor(lookedAt.def.placeCost * 0.5)} refund)`);
           if (inputHandler.consumeKey('KeyV')) {
             ui.openBuildingPanel(lookedAt);
+          }
+          if (inputHandler.consumeKey('KeyC')) {
+            const n = factory.removeBeltsFor(lookedAt);
+            ui.setPlacementHint(n > 0 ? `Removed ${n} belt${n > 1 ? 's' : ''} from ${lookedAt.def.name}` : `${lookedAt.def.name} has no belts`);
+            if (n > 0) audio.playPlace();
+            setTimeout(() => ui.setPlacementHint(''), 1500);
           }
           if (inputHandler.consumeKey('KeyG')) {
             this.movingBuilding = lookedAt;

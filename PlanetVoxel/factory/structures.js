@@ -187,6 +187,9 @@ export class Building {
     // first time) for the first still-solid voxel and chew through that.
     let mineX = null, mineY = null, mineZ = null, drillDepth = 0;
     const startD = Math.max(0.5, this._drillFrontier || 0.5);
+    // Scan outward for the next solid voxel to chew. Crucially this SKIPS open
+    // air (caves): the loop only breaks on solid, so an air gap is stepped over
+    // until the cave's far wall (or deeper terrain) is reached.
     for (let d = startD; d <= MAX_DRILL_DEPTH; d += 0.5) {
       const px = this.position.x + drill.x * d;
       const py = this.position.y + drill.y * d;
@@ -197,8 +200,17 @@ export class Building {
       }
     }
     if (mineX === null) {
-      // Shaft already bored to max depth and the floor is clear — nothing
-      // left to drill within range.
+      // Nothing solid from the current frontier out to max depth. If the
+      // frontier is still short of max depth, it's sitting in open air (a cave
+      // wider than the remaining range, or the shaft punched into a void) —
+      // jump it forward so next tick keeps searching deeper instead of firing
+      // uselessly into the void forever. Only truly starve once the frontier
+      // has reached max depth.
+      if (this._drillFrontier < MAX_DRILL_DEPTH) {
+        this._drillFrontier = Math.min(MAX_DRILL_DEPTH, this._drillFrontier + 8);
+        this.status = 'running';
+        return;
+      }
       this.status = 'starved';
       this._laserTargetLen = 0;
       return;
@@ -286,9 +298,23 @@ export class Building {
       // this same vein depth.
     } else {
       this._lingerTicks = 0;
-      // Advance the drill frontier — keep boring at this depth until it's
-      // fully cleared (density check next cycle), then push deeper.
-      this._drillFrontier = drillDepth;
+      // Normally set the frontier to where solid was found (drillDepth). The
+      // scan always returns the NEAREST solid, so this never skips material.
+      // BUT guard against a pin: if drillDepth is the same depth we carved last
+      // tick (the carve didn't drop the *continuous* density below ISO — the
+      // mineFast integer-voxel edit vs interpolated-field mismatch, e.g. at a
+      // cave wall), nudge the frontier just past it so the shaft can't stall.
+      if (Math.abs(drillDepth - (this._lastDrillDepth ?? -1)) < 0.25) {
+        this._stuckTicks = (this._stuckTicks || 0) + 1;
+        // Only bump after a couple of repeats so a normal slow-clearing wall
+        // (legitimately carved over 2-3 ticks) isn't skipped prematurely.
+        this._drillFrontier = this._stuckTicks >= 2 ? drillDepth + 0.5 : drillDepth;
+        if (this._stuckTicks >= 2) this._stuckTicks = 0;
+      } else {
+        this._stuckTicks = 0;
+        this._drillFrontier = drillDepth;
+      }
+      this._lastDrillDepth = drillDepth;
     }
     this.status = 'running';
     this._laserTargetLen = drillDepth;

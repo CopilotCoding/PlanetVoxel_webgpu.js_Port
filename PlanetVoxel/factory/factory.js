@@ -156,6 +156,28 @@ export class Factory {
     }
   }
 
+  // Removes every belt connected to `building` (either end) WITHOUT removing
+  // the building — lets the player undo belt routing and reconnect. Returns the
+  // number of belts removed.
+  removeBeltsFor(building) {
+    const affectedSources = new Set();
+    let removed = 0;
+    for (let i = this.belts.length - 1; i >= 0; i--) {
+      const belt = this.belts[i];
+      if (belt.from === building || belt.to === building) {
+        affectedSources.add(belt.from);
+        belt.dispose();
+        this.belts.splice(i, 1);
+        removed++;
+      }
+    }
+    // A source may have lost some (not all) of its outgoing belts.
+    for (const b of affectedSources) {
+      b.hasOutgoingBelt = this.belts.some(belt => belt.from === b);
+    }
+    return removed;
+  }
+
   connectBelts(fromBuilding, toBuilding, forcedTier = null) {
     if (fromBuilding === toBuilding) return null;
     // A Market Terminal never produces output — its outputBuffer is always
