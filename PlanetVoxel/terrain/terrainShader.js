@@ -29,6 +29,54 @@ struct U {
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(1) @binding(0) var<uniform> u: U;
 
+// Sun shadow map (group 2) — supplied by SceneRenderer when shadows are enabled
+// and this material has receiveShadow:true. lightDirEnabled.w gates it.
+struct ShadowParams { lightViewProj: mat4x4f, lightDirEnabled: vec4f, };
+@group(2) @binding(0) var<uniform> shadow: ShadowParams;
+@group(2) @binding(1) var shadowMap: texture_depth_2d;
+@group(2) @binding(2) var shadowSampler: sampler_comparison;
+
+// 3x3 PCF directional shadow factor in [0,1] (1 = lit). Returns 1.0 when
+// shadows are disabled or the point is outside the shadow frustum.
+//
+// The shadow map covers the WHOLE PLANET, so its texels are large (~0.2 world
+// units each) and a plain depth bias can't keep the surface from shadowing
+// itself — that self-shadowing is the "waves of light" acne. Two fixes:
+//   1) NORMAL OFFSET: push the sample point a couple of texels along the surface
+//      normal before projecting, so the surface lifts off its own shadow.
+//   2) a generous slope-scaled depth bias on top.
+fn sunShadow(worldPos: vec3f, n: vec3f) -> f32 {
+  if (shadow.lightDirEnabled.w < 0.5) { return 1.0; }
+  let L = normalize(-shadow.lightDirEnabled.xyz);
+  let ndl = max(dot(n, L), 0.0);
+
+  // Normal-offset: shift along the normal, scaled up as the surface grazes the
+  // light (where acne is worst). ~0.6 world units handles the coarse texels.
+  let normalOffset = 0.6 * (1.0 - ndl) + 0.15;
+  let p = worldPos + n * normalOffset;
+
+  let clip = shadow.lightViewProj * vec4f(p, 1.0);
+  if (clip.w <= 0.0) { return 1.0; }
+  let ndc = clip.xyz / clip.w;
+  if (ndc.x < -1.0 || ndc.x > 1.0 || ndc.y < -1.0 || ndc.y > 1.0 || ndc.z < 0.0 || ndc.z > 1.0) { return 1.0; }
+  let uv = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+
+  // Slope-scaled depth bias in NDC-z. Large because one texel spans a big slab
+  // of ground over a ~400-unit depth range.
+  let bias = clamp(0.0008 + 0.004 * (1.0 - ndl), 0.0008, 0.005);
+  let refDepth = ndc.z - bias;
+
+  let dim = vec2f(textureDimensions(shadowMap, 0));
+  let texel = 1.0 / dim;
+  var sum = 0.0;
+  for (var y = -1; y <= 1; y++) {
+    for (var x = -1; x <= 1; x++) {
+      sum = sum + textureSampleCompareLevel(shadowMap, shadowSampler, uv + vec2f(f32(x), f32(y)) * texel, refDepth);
+    }
+  }
+  return sum / 9.0;
+}
+
 struct VOut {
   @builtin(position) position: vec4f,
   @location(0) color: vec3f,
@@ -67,13 +115,15 @@ fn fragmentMain(i: VOut) -> @location(0) vec4f {
   let lanternRange = u.params.x;
   let ambientIntensity = u.params.y;
 
-  // Sun — only reaches surfaces with sky access, gated by a flattened
-  // hemisphere day/night term so the whole day side is lit, not just the
-  // sub-solar point.
+  // Sun — gated by a flattened hemisphere day/night term so the whole day side
+  // is lit, not just the sub-solar point. Directional shadowing now comes from
+  // the real shadow map (sunShadow); skyAccess is NO LONGER multiplied here (it
+  // would double-darken). skyAccess is repurposed below as ambient occlusion.
   let sunDir = normalize(u.sunPosition.xyz - i.worldPos);
   let sunDot = max(0.0, dot(n, sunDir));
   let hemisphereDot = pow(max(0.0, dot(normalize(i.worldPos), sunDir)), 0.35);
-  let sunContribI = sunDot * hemisphereDot * sunIntensity * i.skyAccess;
+  let shadowFactor = sunShadow(i.worldPos, n);
+  let sunContribI = sunDot * hemisphereDot * sunIntensity * shadowFactor;
   let sunContrib = sunContribI * vec3f(1.0, 0.97, 0.88);
 
   // Lantern — tight quadratic falloff plus an angle-independent fill.
@@ -85,7 +135,12 @@ fn fragmentMain(i: VOut) -> @location(0) vec4f {
   let lFill = lAtten * 0.45;
   let lanternContrib = (lDot * lAtten + lFill) * vec3f(1.0, 0.80, 0.47);
 
-  let light = vec3f(ambientIntensity) + sunContrib + lanternContrib;
+  // Ambient occlusion from skyAccess: enclosed areas (cave mouths, crevices)
+  // have low sky access and read darker, even where the coarse sun shadow map
+  // can't resolve them. Applied to ambient + as a gentle overall AO multiplier;
+  // the lantern stays unoccluded so it still lights up dark interiors.
+  let ao = mix(0.35, 1.0, clamp(i.skyAccess, 0.0, 1.0));
+  let light = vec3f(ambientIntensity) * ao + sunContrib * ao + lanternContrib;
   var rgb = i.color * light;
 
   if (u.fogColor.w > 0.5) {

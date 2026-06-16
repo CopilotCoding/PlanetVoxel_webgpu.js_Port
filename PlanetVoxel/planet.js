@@ -52,6 +52,8 @@ export class Planet {
       updateUniforms: (view) => packTerrainUniforms(view, uniforms),
       side: 'front',
       merge: true, // all chunks share one geometry stream → one draw call
+      receiveShadow: true, // terrain samples the sun shadow map (group 2)
+      castShadow: true,    // terrain casts into the sun shadow map
     });
     this.material.uniforms = uniforms;
     this._buildInitialChunks();

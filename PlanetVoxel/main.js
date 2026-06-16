@@ -255,6 +255,9 @@ async function startGame(worldMeta, save, saveManager) {
     sunLight.position.copy(sunCoreMesh.position);
     // Lantern auto-dims when in full daylight (sun facing this side of the planet)
     const sunDir = sunCoreMesh.position.clone().normalize();
+    // Sun shadow map tracks the sun: the light TRAVELS from the sun toward the
+    // planet, i.e. the negated sun direction.
+    renderer.setShadowLight([-sunDir.x, -sunDir.y, -sunDir.z]);
     const playerDir = player.position.clone().normalize();
     const dayDot = sunDir.dot(playerDir); // 1=facing sun, -1=facing away
     // Underground check: raycast straight up from the player — if solid terrain

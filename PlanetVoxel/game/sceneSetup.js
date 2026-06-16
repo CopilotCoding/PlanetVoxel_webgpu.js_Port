@@ -40,6 +40,14 @@ export async function setupScene() {
   const starGeo = new Geometry(device, { attributes: { position: { format: 'float32x3', data: new Float32Array(starVerts) } } });
   scene.add(new Mesh(starGeo, new PointsMaterial({ color: 0xffffff, size: 1.6, depthWrite: false })));
 
+  // Sun shadows: a single directional shadow map covering the whole planet.
+  // Enabled here; the per-frame sun direction is fed in the main loop. (Points
+  // never cast; the sun/atmosphere meshes below opt out via castShadow:false.)
+  renderer.enableShadows({
+    size: 2048,
+    bounds: { min: [-PLANET_RADIUS - 30, -PLANET_RADIUS - 30, -PLANET_RADIUS - 30], max: [PLANET_RADIUS + 30, PLANET_RADIUS + 30, PLANET_RADIUS + 30] },
+  });
+
   // Near-zero ambient — dark side is total darkness, only the lantern lights locally.
   const ambientLight = new AmbientLight(0x111133, 0.03);
   scene.add(ambientLight);
@@ -62,18 +70,18 @@ export async function setupScene() {
   // Matches the original exactly: opaque white core (no fog), two additive
   // coronas (depthWrite off, no fog). depthWrite stays on for the core so
   // terrain occludes the sun normally.
-  const core = new Mesh(geometryFromData(device, sphereData(SUN_RADIUS, 20, 20)), new BasicMaterial({ color: 0xffffff, fog: false }));
+  const core = new Mesh(geometryFromData(device, sphereData(SUN_RADIUS, 20, 20)), new BasicMaterial({ color: 0xffffff, fog: false, castShadow: false }));
   core.frustumCulled = false;
   sunCoreMesh.add(core);
   const c1 = new Mesh(
     geometryFromData(device, sphereData(SUN_RADIUS * 1.6, 20, 20)),
-    new BasicMaterial({ color: 0xaaccff, transparent: true, opacity: 0.12, blending: 'additive', depthWrite: false, fog: false }),
+    new BasicMaterial({ color: 0xaaccff, transparent: true, opacity: 0.12, blending: 'additive', depthWrite: false, fog: false, castShadow: false }),
   );
   c1.frustumCulled = false;
   sunCoreMesh.add(c1);
   const c2 = new Mesh(
     geometryFromData(device, sphereData(SUN_RADIUS * 2.6, 20, 20)),
-    new BasicMaterial({ color: 0x8899ff, transparent: true, opacity: 0.06, blending: 'additive', depthWrite: false, fog: false }),
+    new BasicMaterial({ color: 0x8899ff, transparent: true, opacity: 0.06, blending: 'additive', depthWrite: false, fog: false, castShadow: false }),
   );
   c2.frustumCulled = false;
   sunCoreMesh.add(c2);
@@ -89,7 +97,7 @@ export async function setupScene() {
   // Atmosphere glow — BackSide so it renders viewed from inside the sphere.
   const atmosMesh = new Mesh(
     geometryFromData(device, sphereData(210, 32, 32)),
-    new BasicMaterial({ color: 0x3366ff, transparent: true, opacity: 0.08, side: 'back', blending: 'additive', depthWrite: false }),
+    new BasicMaterial({ color: 0x3366ff, transparent: true, opacity: 0.08, side: 'back', blending: 'additive', depthWrite: false, castShadow: false }),
   );
   atmosMesh.frustumCulled = false;
   scene.add(atmosMesh);
