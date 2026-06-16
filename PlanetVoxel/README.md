@@ -58,6 +58,15 @@ The game is a retained-mode app on top of webgpu.js's GPU-driven scene layer:
   via `ShaderMaterial`, with per-vertex `position/normal/color/skyAccess`
   attributes and the sun/lantern/day-night/fog lighting model. This shader is
   the game's, not the engine's — the engine stays game-agnostic.
+- **Sun shadows** use the engine's optional shadow support
+  (`SceneRenderer.enableShadows()`), enabled in `game/sceneSetup.js` with a
+  single directional shadow map sized to cover the whole planet. The sun
+  direction is fed each frame (`renderer.setShadowLight(...)`) so shadows track
+  the day/night cycle. Terrain and buildings cast + receive; the sun/atmosphere
+  /stars opt out via `castShadow:false`. The terrain shader samples the shadow
+  map (group 2) and multiplies it onto the sun term; `skyAccess` is now an
+  ambient-occlusion factor (darkens recesses/caves), and the lantern is
+  unshadowed so it still lights dark interiors.
 - The **minimap** is a second `OrthographicCamera` rendered top-down over the
   same scene buffers (the engine's per-camera rendering), not a separate scene.
 - **Building selection / belt connection** uses the engine's GPU picker against
@@ -74,12 +83,23 @@ the last two are port-era.
    A directional sun lit the *inside* of caves and tunnels too, because a
    directional light has no occlusion concept without shadow maps. A point light
    at the sun's position (the engine's `PointLight` with effectively infinite
-   range) means tunnel walls facing inward naturally get near-zero light — no
-   shadow maps needed. Combined with the terrain shader's per-vertex
-   `skyAccess` term (precomputed open-sky visibility), this gives convincing
-   "sunlight doesn't reach underground" for free. Real directional **sun shadow
-   maps** (multiplying the sun term on top of `skyAccess`, lantern unshadowed)
-   are a planned addition on top of the engine's `ShadowMap` — not yet wired in.
+   range) means tunnel walls facing inward naturally get near-zero light. The
+   terrain shader's per-vertex `skyAccess` term (precomputed open-sky visibility)
+   added to that. Real directional **sun shadow maps** are now wired in (see the
+   rendering section): terrain/buildings cast onto each other and `skyAccess` was
+   repurposed from "fake sun occlusion" into an ambient-occlusion term — so the
+   shadow map handles dynamic cast shadows while `skyAccess` keeps recesses/caves
+   dark where the coarse whole-planet map can't resolve them. The PointLight sun
+   still drives the warm directional shading; the shadow map only gates it.
+
+   Two shadow tuning knobs live in `terrain/terrainShader.js`'s `sunShadow()`:
+   the **normal offset** and **slope-scaled depth bias**. The shadow map covers
+   the whole planet, so its texels are large (~0.2 world units at 2048²) — a
+   plain depth bias self-shadows the surface into "waves of light" (acne). The
+   normal offset (push the sample point along the surface normal before
+   projecting) plus a generous bias fixes it. Bump the map size in
+   `game/sceneSetup.js` for sharper shadows; reduce the normal offset if shadows
+   detach from their casters (peter-panning).
 
 2. **Underground/cave detection needs a real upward raycast, not fixed height
    samples.** The original detector checked density at 3 fixed heights above the
